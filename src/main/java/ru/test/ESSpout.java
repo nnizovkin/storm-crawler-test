@@ -84,6 +84,8 @@ public class ESSpout extends BaseRichSpout {
         if(counter == 0) {
             cache.invalidateAll();
         }
+
+        Thread.sleep(10000 + 100 * counter);
     }
 
 

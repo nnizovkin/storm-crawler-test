@@ -80,6 +80,11 @@ public class ESSpout extends BaseRichSpout {
                 counter++;
             }
         }
+
+        if(counter == 0) {
+            cache.invalidateAll();
+        }
+
         Thread.sleep(10000 + 1000 * counter);
     }
 

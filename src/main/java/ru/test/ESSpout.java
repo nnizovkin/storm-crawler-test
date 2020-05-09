@@ -36,7 +36,7 @@ public class ESSpout extends BaseRichSpout {
     private RestHighLevelClient client;
     private SpoutOutputCollector collector;
     private Cache<String, String> cache;
-    private final int REQUEST_SIZE = 10;
+    private final int REQUEST_SIZE = 1000;
 
     @Override
     public void open(Map stormConf, TopologyContext context,
@@ -84,8 +84,6 @@ public class ESSpout extends BaseRichSpout {
         if(counter == 0) {
             cache.invalidateAll();
         }
-
-        Thread.sleep(10000 + 1000 * counter);
     }
 
 

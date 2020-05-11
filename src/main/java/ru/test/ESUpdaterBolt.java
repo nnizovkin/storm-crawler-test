@@ -7,7 +7,6 @@ import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import crawlercommons.domains.PaidLevelDomain;
 import org.apache.commons.lang.StringUtils;
-import org.apache.http.HttpHost;
 import org.apache.http.client.CredentialsProvider;
 import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.storm.task.OutputCollector;
@@ -15,15 +14,7 @@ import org.apache.storm.task.TopologyContext;
 import org.apache.storm.topology.OutputFieldsDeclarer;
 import org.apache.storm.topology.base.BaseRichBolt;
 import org.apache.storm.tuple.Tuple;
-import org.elasticsearch.action.bulk.BulkProcessor;
-import org.elasticsearch.action.bulk.BulkRequest;
-import org.elasticsearch.action.bulk.BulkResponse;
 import org.elasticsearch.action.update.UpdateRequest;
-import org.elasticsearch.client.RequestOptions;
-import org.elasticsearch.client.RestClient;
-import org.elasticsearch.client.RestClientBuilder;
-import org.elasticsearch.client.RestHighLevelClient;
-import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.joda.time.format.ISODateTimeFormat;
 import org.slf4j.Logger;
@@ -40,12 +31,9 @@ import static org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder;
 public class ESUpdaterBolt extends BaseRichBolt {
     private static final Logger LOG = LoggerFactory
             .getLogger(ESUpdaterBolt.class);
-    protected String indexName;
-    private RestHighLevelClient client;
     private Cache<String, String> cache;
     private OutputCollector collector;
-    BulkProcessor bulkProcessor;
-
+    private ESConnection connection;
     public ESUpdaterBolt() {
         super();
     }
@@ -53,47 +41,17 @@ public class ESUpdaterBolt extends BaseRichBolt {
     @Override
     public void prepare(Map stormConf, TopologyContext context,
                         OutputCollector collector) {
-        indexName = "pages";
-        try {
             final CredentialsProvider credentialsProvider =new BasicCredentialsProvider();
-            RestClientBuilder builder = RestClient.builder(new HttpHost("localhost", 9200))
-                    .setHttpClientConfigCallback(httpClientBuilder ->
-                            httpClientBuilder.setDefaultCredentialsProvider(credentialsProvider));
             this.collector = collector;
-            client = new RestHighLevelClient(builder);
             cache = CacheBuilder.newBuilder().maximumSize(1000000).build();
-            bulkProcessor = BulkProcessor
-                    .builder((request, bulkListener) -> client.bulkAsync(request,
-                            RequestOptions.DEFAULT, bulkListener), new BulkProcessor.Listener() {
-                        @Override
-                        public void beforeBulk(long executionId, BulkRequest request) {
-
-                        }
-
-                        @Override
-                        public void afterBulk(long executionId, BulkRequest request, BulkResponse response) {
-
-                        }
-
-                        @Override
-                        public void afterBulk(long executionId, BulkRequest request, Throwable failure) {
-
-                        }
-                    })
-                    .setFlushInterval(TimeValue.timeValueSeconds(5)).setBulkActions(1000)
-                    .setConcurrentRequests(1).build();
-
-        } catch (Exception e1) {
-            LOG.error("Can't connect to ElasticSearch", e1);
-            throw new RuntimeException(e1);
-        }
+            connection = new ESConnection();
     }
 
     @Override
     public void cleanup() {
-        if (client != null) {
+        if (connection.getClient() != null) {
             try {
-                client.close();
+                connection.getClient().close();
             } catch (IOException e) {
                 throw new RuntimeException();
             }
@@ -152,12 +110,12 @@ public class ESUpdaterBolt extends BaseRichBolt {
         UpdateRequest request = new UpdateRequest();
         request.docAsUpsert(true);
         request.id(sha256hex);
-        request.index(indexName);
+        request.index(connection.getIndexName());
         request.doc(builder);
 
         LOG.debug("Sending to ES buffer {} with ID {}", url, sha256hex);
 
-        bulkProcessor.add(request);
+        connection.getBulkProcessor().add(request);
         cache.put(sha256hex, "");
         collector.ack(tuple);
     }

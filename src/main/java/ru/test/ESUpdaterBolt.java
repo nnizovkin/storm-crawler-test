@@ -15,11 +15,15 @@ import org.apache.storm.task.TopologyContext;
 import org.apache.storm.topology.OutputFieldsDeclarer;
 import org.apache.storm.topology.base.BaseRichBolt;
 import org.apache.storm.tuple.Tuple;
+import org.elasticsearch.action.bulk.BulkProcessor;
+import org.elasticsearch.action.bulk.BulkRequest;
+import org.elasticsearch.action.bulk.BulkResponse;
 import org.elasticsearch.action.update.UpdateRequest;
 import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestClient;
 import org.elasticsearch.client.RestClientBuilder;
 import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.joda.time.format.ISODateTimeFormat;
 import org.slf4j.Logger;
@@ -40,6 +44,7 @@ public class ESUpdaterBolt extends BaseRichBolt {
     private RestHighLevelClient client;
     private Cache<String, String> cache;
     private OutputCollector collector;
+    BulkProcessor bulkProcessor;
 
     public ESUpdaterBolt() {
         super();
@@ -57,6 +62,27 @@ public class ESUpdaterBolt extends BaseRichBolt {
             this.collector = collector;
             client = new RestHighLevelClient(builder);
             cache = CacheBuilder.newBuilder().maximumSize(1000000).build();
+            bulkProcessor = BulkProcessor
+                    .builder((request, bulkListener) -> client.bulkAsync(request,
+                            RequestOptions.DEFAULT, bulkListener), new BulkProcessor.Listener() {
+                        @Override
+                        public void beforeBulk(long executionId, BulkRequest request) {
+
+                        }
+
+                        @Override
+                        public void afterBulk(long executionId, BulkRequest request, BulkResponse response) {
+
+                        }
+
+                        @Override
+                        public void afterBulk(long executionId, BulkRequest request, Throwable failure) {
+
+                        }
+                    })
+                    .setFlushInterval(TimeValue.timeValueSeconds(5)).setBulkActions(1000)
+                    .setConcurrentRequests(1).build();
+
         } catch (Exception e1) {
             LOG.error("Can't connect to ElasticSearch", e1);
             throw new RuntimeException(e1);
@@ -131,7 +157,7 @@ public class ESUpdaterBolt extends BaseRichBolt {
 
         LOG.debug("Sending to ES buffer {} with ID {}", url, sha256hex);
 
-        client.update(request, RequestOptions.DEFAULT);
+        bulkProcessor.add(request);
         cache.put(sha256hex, "");
         collector.ack(tuple);
     }
